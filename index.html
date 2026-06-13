@@ -151,9 +151,12 @@
 
     // Captures current GIF frame as a static JPEG so it stays frozen during the reveal
     function freezeGif(imgEl) {
+      const dpr = window.devicePixelRatio || 1;
+      const w   = imgEl.offsetWidth;
+      const h   = imgEl.offsetHeight;
       const c   = document.createElement('canvas');
-      c.width   = imgEl.offsetWidth;
-      c.height  = imgEl.offsetHeight;
+      c.width   = Math.round(w * dpr);
+      c.height  = Math.round(h * dpr);
       const off = c.getContext('2d');
       off.fillStyle = '#ffffff';
       off.fillRect(0, 0, c.width, c.height);
@@ -236,8 +239,9 @@
         }, { once: true });
       } else {
         mediaVideo.pause();
-        mediaVideo.style.display = 'none';
-        mediaImg.style.display   = 'block';
+        mediaVideo.style.display    = 'none';
+        mediaImg.style.display      = 'block';
+        mediaImg.style.visibility   = 'hidden';
         const originalSrc = 'images/' + file;
         mediaImg.src = originalSrc;
         const onReady = () => {
@@ -245,9 +249,14 @@
           resizeMedia(mediaImg);
           if (ext === 'gif') {
             freezeGif(mediaImg);
+            mediaImg.style.visibility = 'visible';
             startReveal(() => { mediaImg.src = originalSrc; });
           } else {
-            startReveal();
+            const go = () => {
+              mediaImg.style.visibility = 'visible';
+              startReveal();
+            };
+            mediaImg.decode ? mediaImg.decode().then(go).catch(go) : go();
           }
         };
         mediaImg.complete ? onReady() : mediaImg.addEventListener('load', onReady, { once: true });
