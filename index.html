@@ -100,7 +100,7 @@
     const canvas       = document.getElementById('overlay');
     const ctx          = canvas.getContext('2d');
 
-    const PIXEL_SIZE         = 1.2;
+    const PIXEL_SIZE         = window.devicePixelRatio >= 2 ? 2 : 1;
     const REVEAL_DURATION    = 2;
     const MAX_WIDTH          = 650; // landscape
     const MAX_HEIGHT_PORTRAIT = 400; // portrait, ratio ≤ 1.5
@@ -163,8 +163,12 @@
 
     function startReveal(onComplete) {
       const myId = revealId;
-      setupCanvas();
 
+      // Snap canvas back to fully opaque before building new reveal
+      canvas.style.transition = 'none';
+      canvas.style.opacity    = '1';
+
+      setupCanvas();
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -195,8 +199,15 @@
       function animate() {
         if (myId !== revealId) return;
         if (index >= count) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          if (onComplete) onComplete();
+          canvas.style.transition = 'opacity 0.6s ease';
+          canvas.style.opacity    = '0';
+          canvas.addEventListener('transitionend', () => {
+            if (myId !== revealId) return;
+            canvas.style.transition = 'none';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.style.opacity = '1';
+            if (onComplete) onComplete();
+          }, { once: true });
           return;
         }
         const end = Math.min(index + pixelsPerFrame, count);
@@ -256,6 +267,8 @@
     // Click advances to next
     document.addEventListener('click', () => {
       revealId++;
+      canvas.style.transition = 'none';
+      canvas.style.opacity    = '1';
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       currentIndex = (currentIndex + 1) % mediaFiles.length;
