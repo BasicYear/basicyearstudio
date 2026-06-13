@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>White Overlay</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: #fff;
+      cursor: pointer;
+    }
+
+    .container {
+      position: relative;
+    }
+
+    img, video {
+      display: block;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    #caption {
+      margin-top: 12px;
+      font-size: 13px;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      color: #333;
+      max-width: min(650px, 95vw);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img id="media-img" alt="" style="display:none;">
+    <video id="media-video" loop muted playsinline style="display:none;"></video>
+    <video id="preload-video" preload="metadata" muted style="display:none; position:absolute; width:0; height:0;"></video>
+    <canvas id="overlay"></canvas>
+  </div>
+  <p id="caption">This is a placeholder caption. It will describe the artwork, its context, the medium used, and any other relevant details that the viewer might need to fully understand and appreciate what they see.</p>
+
+  <script>
+    const mediaFiles = [
+      'IMG_2729.jpg',
+      'IMG_3548.jpg',
+      'VID-20220723-WA0001.mp4',
+      'Severin_Bunse_Yale_in_the_world_bubble.gif',
+      'Yale_in_the_World_03_350px.gif',
+      'Severin_Bunse_Screensaver_2560_700K.gif',
+      'Severin_Bunse_Screensaver_1920.jpg',
+      'SeverinBunse_Bestarium_1900px_800K.gif',
+      'SeverinBunse_Yale_in_the_World_2560_400K.gif',
+      'Severin_BunseEcho&Delay_2560px_700K.gif',
+      'Severin_Bunse_Halves_Signage_2560_700K.gif',
+      'Severin_Bunse_Halves_Window_2560_700K.gif',
+      'Severin_Bunse_Mary_Reid_Kelley_2560_700K.gif',
+      'Severin_Bunse_Mary_Reid_Kelley_Vertical_2560.jpg',
+      'Severin_Bunse_Mary_Reid_Kelly_2560_800K.gif',
+      'Severin_Bunse_Material_Utopias_2560.jpg',
+      'Severin_Bunse_Material_Utopias_2560_700K.gif',
+      'Severin_Bunse_Material_Utopias_Vertical_2560.jpg',
+      'Severin_Bunse_PGWeise_2560_2,8M.png',
+      'Severin_Bunse_PGWeise_2560_400K.gif',
+      'Severin_Bunse_Schuit_2560_900K.gif',
+      'Severin_Bunse_StandArt_2560_170K.png',
+      'Severin_Bunse_StandArt_2560_200K.gif',
+      'Severin_Bunse_StandArt_2560_400K.jpg',
+      'Severin_Bunse_StandArt_2560_700K.gif',
+      'Severin_Bunse_StandArt_A_2560_267K.jpg',
+      'Severin_Bunse_StandArt_A_Vertical_2560.gif',
+      'Severin_Bunse_StandArt_A_Vertical_2560.jpg',
+      'Severin_Bunse_StandArt_Line_2560_700K.gif',
+      'Severin_Bunse_StandArt_N_2560.jpg',
+      'Severin_Bunse_Tennhauser_Gate_2560_600K.gif',
+      'Severin_Bunse_Thesis_2560_700K.gif',
+      'Severin_Bunse_screeensaver_2560_2,8m.jpg',
+    ];
+
+    const mediaImg     = document.getElementById('media-img');
+    const mediaVideo   = document.getElementById('media-video');
+    const preloadVideo = document.getElementById('preload-video');
+    const canvas       = document.getElementById('overlay');
+    const ctx          = canvas.getContext('2d');
+
+    const PIXEL_SIZE         = 1.2;
+    const REVEAL_DURATION    = 2;
+    const MAX_WIDTH          = 650; // landscape
+    const MAX_HEIGHT_PORTRAIT = 400; // portrait, ratio ≤ 1.5
+    const MAX_HEIGHT_SKINNY   = 450; // portrait, ratio > 1.5
+
+    let currentIndex = 0;
+    let revealId     = 0;
+    let loadGen      = 0;
+
+    function preloadNext() {
+      const nextIndex = (currentIndex + 1) % mediaFiles.length;
+      const file = mediaFiles[nextIndex];
+      const ext  = file.split('.').pop().toLowerCase();
+      if (ext === 'mp4') {
+        preloadVideo.src = 'images/' + file;
+        preloadVideo.load();
+      } else {
+        const img = new Image();
+        img.src = 'images/' + file;
+      }
+    }
+
+    function resizeMedia(el) {
+      const nw = el.naturalWidth  || el.videoWidth;
+      const nh = el.naturalHeight || el.videoHeight;
+      el.style.width  = 'auto';
+      el.style.height = 'auto';
+      if (nh > nw) {
+        const maxH = (nh / nw) > 1.5 ? MAX_HEIGHT_SKINNY : MAX_HEIGHT_PORTRAIT;
+        el.style.maxWidth  = '95vw';
+        el.style.maxHeight = `min(${maxH}px, 95vh)`;
+      } else {
+        el.style.maxWidth  = `min(${MAX_WIDTH}px, 95vw)`;
+        el.style.maxHeight = '';
+      }
+    }
+
+    function setupCanvas() {
+      const el  = mediaVideo.style.display !== 'none' ? mediaVideo : mediaImg;
+      const dpr = window.devicePixelRatio || 1;
+      const w   = el.offsetWidth;
+      const h   = el.offsetHeight;
+      canvas.width  = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      canvas.style.width  = w + 'px';
+      canvas.style.height = h + 'px';
+    }
+
+    // Captures current GIF frame as a static JPEG so it stays frozen during the reveal
+    function freezeGif(imgEl) {
+      const c   = document.createElement('canvas');
+      c.width   = imgEl.offsetWidth;
+      c.height  = imgEl.offsetHeight;
+      const off = c.getContext('2d');
+      off.fillStyle = '#ffffff';
+      off.fillRect(0, 0, c.width, c.height);
+      off.drawImage(imgEl, 0, 0, c.width, c.height);
+      imgEl.src = c.toDataURL('image/jpeg', 0.92);
+    }
+
+    function startReveal(onComplete) {
+      const myId = revealId;
+      setupCanvas();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const cols  = Math.ceil(canvas.width / PIXEL_SIZE);
+      const rows  = Math.ceil(canvas.height / PIXEL_SIZE);
+      const count = cols * rows;
+      const pixels = new Float32Array(count * 2);
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const i = (r * cols + c) * 2;
+          pixels[i]     = c * PIXEL_SIZE;
+          pixels[i + 1] = r * PIXEL_SIZE;
+        }
+      }
+      for (let i = count - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0;
+        const x = pixels[i * 2],     y = pixels[i * 2 + 1];
+        pixels[i * 2]     = pixels[j * 2];
+        pixels[i * 2 + 1] = pixels[j * 2 + 1];
+        pixels[j * 2]     = x;
+        pixels[j * 2 + 1] = y;
+      }
+
+      const pixelsPerFrame = Math.ceil(count / (REVEAL_DURATION * 60));
+      let index = 0;
+
+      function animate() {
+        if (myId !== revealId) return;
+        if (index >= count) {
+          if (onComplete) onComplete();
+          return;
+        }
+        const end = Math.min(index + pixelsPerFrame, count);
+        for (; index < end; index++) {
+          ctx.clearRect(pixels[index * 2], pixels[index * 2 + 1], PIXEL_SIZE, PIXEL_SIZE);
+        }
+        requestAnimationFrame(animate);
+      }
+      animate();
+    }
+
+    function loadMedia(index) {
+      const myGen = ++loadGen;
+      const file  = mediaFiles[index];
+      const ext   = file.split('.').pop().toLowerCase();
+
+      if (ext === 'mp4') {
+        mediaImg.style.display   = 'none';
+        mediaVideo.style.display = 'block';
+        mediaVideo.src = 'images/' + file;
+        mediaVideo.load();
+        mediaVideo.addEventListener('canplay', () => {
+          if (myGen !== loadGen) return;
+          resizeMedia(mediaVideo);
+          startReveal(() => mediaVideo.play());
+        }, { once: true });
+      } else {
+        mediaVideo.pause();
+        mediaVideo.style.display = 'none';
+        mediaImg.style.display   = 'block';
+        const originalSrc = 'images/' + file;
+        mediaImg.src = originalSrc;
+        const onReady = () => {
+          if (myGen !== loadGen) return;
+          resizeMedia(mediaImg);
+          if (ext === 'gif') {
+            freezeGif(mediaImg);
+            startReveal(() => { mediaImg.src = originalSrc; });
+          } else {
+            startReveal();
+          }
+        };
+        mediaImg.complete ? onReady() : mediaImg.addEventListener('load', onReady, { once: true });
+      }
+    }
+
+    // Pause/resume video when tab visibility changes
+    document.addEventListener('visibilitychange', () => {
+      if (mediaVideo.style.display === 'none') return;
+      document.hidden ? mediaVideo.pause() : mediaVideo.play();
+    });
+
+    // Initial load
+    loadMedia(0);
+    preloadNext();
+
+    // Click advances to next
+    document.addEventListener('click', () => {
+      revealId++;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      currentIndex = (currentIndex + 1) % mediaFiles.length;
+      loadMedia(currentIndex);
+      preloadNext();
+    });
+  </script>
+</body>
+</html>
