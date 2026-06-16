@@ -86,11 +86,32 @@
       'Severin_Bunse_screeensaver_2560_2,8m.jpg',
     ];
 
+    const DEFAULT_CAPTION = 'This is a placeholder caption. It will describe the artwork, its context, the medium used, and any other relevant details that the viewer might need to fully understand and appreciate what they see.';
+
+    // Parallel to mediaFiles, by index. Slides without an entry yet just
+    // keep showing DEFAULT_CAPTION.
+    const captions = [
+      undefined, // slide 1 (IMG_2729.jpg) — no caption provided yet
+      `Identity for the midterm exhibition of the undergraduate program at Yale School of Art. The identity consisting of a title, signage, posters, teasers and a window display made of 24 engraved glasses from the local thrift store. The title of the Show "Halves" is a reference to the common expression, "Is the glass half empty or half full?" and the signage referenced spilled water. This project was developed in collaboration with Cindy Hwang and Matthias Neckermann. New Haven, 2019.`,
+      `The Fashion Show — Visual campaign for the graduation show of the fashion design department at the Gerrit Rietveld Academie, consisting of a title, teasers, invitations, a newspaper, signage as well as a concept for the spacial design of the show. The campaign contrasted found images from fashion magazines with everyday banalities in an attempt to represent the friction between high fashion and every day life. Project developed in collaboration with Niklaus Mettler and Line-Gry Hørup. Amsterdam, 2014.`,
+      `Material Utopias — Publication for the graduation show of the temporary masters program "Material Utopias" at the Sandberg Instituut in Amsterdam. Amsterdam, 2015.`,
+      `Bestarium — Cover art for "A Sketch of the Past", an autobiographical essay written by Virginia Woolf in 1939 made in collaboration with Line Gry Hørup. Amsterdam, 2016.`,
+      `YSoA in the World Digest — Three animation made for the biweekly email digest "Yale School of Art in the World." The image of a globe was used to illustrate the title of the newsletter while attempting to abstract the map by adding scans of books from the university library. New Haven, 2018.`,
+      `YSoA in the World Digest 2 — Three animations made for the biweekly email digest "Yale School of Art in the World". For this second iteration of the project, the globes were turned into bubbles. New Haven, 2018.`,
+      `Wedding Invitation — Wedding invite for Alix Masters and Emmil Weinstein. This project was developed in collaboration with Emma Gregoline. New York City, 2024.`,
+      `Tennhaeuser Gate — Exhibition initiated and designed in collaboration with Rustan Soderling. The exhibition took place in the abandoned staircase of a former school building in Amsterdam and consisted of video work on screen and a fragrance developed by Niklaus Mettler. The invitation was a 3D rendered video work by the artists, based on a 3D scan of the space in which the exhibition took place. Amsterdam, 2017.`,
+      `Thesis Book — Audiobook scripted, recorded and designed as part of the requirements to graduate from the graphic design program at the Yale School of Art. The tape contained several Slow Scan Television encodings of images I made during my time at the department. SSTV is a technology used to translate images into sound patterns for transmission through radio waves. New Haven, 2019.`,
+      `Mary Reid Kelly — Poster for an artist talk with Mary Reid Kelley at Yale School of Art. I based this poster off of her video work, "Priapus Agonistes." Pasiphae, the main character in this piece, is a character from Greek mythology that, through a series of unfortunate circumstances, falls in love with a bull which results in the birth of the Minotaur. Formally the poster is a reference to some of the drawings showing up in the background of the video as posters and graffiti. New Haven, 2018.`,
+      `Today a Reader — Campaign and exhibition design developed for the graduation show of the graphic design program at the Yale School of Art in collaboration with Emma Gregoline, Simone Cutri, Hyung Cho and Rosa McElheny. New Haven, 2019.`,
+      `Screensaver — Screensaver made from an animated, three dimensional drawing in virtual reality. The drawing relates to the proportions of the human body as it is the documentation of my own gestures in three-dimensional space. The screensaver was published by eeebooks with the help of Marius Schwarz, François Girard-Meunier and Jonathan Puckey and can be downloaded for free at eeebooks.net. New Haven, 2019.`,
+    ];
+
     const container   = document.querySelector('.container');
     const mediaImg    = document.getElementById('media-img');
     const mediaVideo  = document.getElementById('media-video');
     const canvas      = document.getElementById('overlay');
     const ctx         = canvas.getContext('2d');
+    const captionEl   = document.getElementById('caption');
 
     const REVEAL_DURATION = 2;
     const EASE_START      = 0.8; // fraction of the duration after which the reveal eases to a stop
@@ -242,6 +263,7 @@
       const reveal = () => {
         resizeMedia(el);
         pinContainer(el);
+        captionEl.textContent = captions[index] || DEFAULT_CAPTION;
         el.style.visibility = 'visible';
         if (isVideo) el.play().catch(() => {});
         startReveal();
