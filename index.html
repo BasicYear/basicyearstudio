@@ -52,7 +52,6 @@
   <div class="container">
     <img id="media-img" alt="" style="display:none;">
     <video id="media-video" loop muted playsinline style="display:none;"></video>
-    <video id="preload-video" preload="metadata" muted style="display:none; position:absolute; width:0; height:0;"></video>
     <canvas id="overlay"></canvas>
   </div>
   <p id="caption">This is a placeholder caption. It will describe the artwork, its context, the medium used, and any other relevant details that the viewer might need to fully understand and appreciate what they see.</p>
@@ -74,94 +73,84 @@
       'Severin_Bunse_Mary_Reid_Kelley_2560_700K.gif',
       'Severin_Bunse_Mary_Reid_Kelley_Vertical_2560.jpg',
       'Severin_Bunse_Mary_Reid_Kelly_2560_800K.gif',
-      'Severin_Bunse_Material_Utopias_2560.jpg',
       'Severin_Bunse_Material_Utopias_2560_700K.gif',
-      'Severin_Bunse_Material_Utopias_Vertical_2560.jpg',
       'Severin_Bunse_PGWeise_2560_2,8M.png',
       'Severin_Bunse_PGWeise_2560_400K.gif',
       'Severin_Bunse_Schuit_2560_900K.gif',
-      'Severin_Bunse_StandArt_2560_170K.png',
-      'Severin_Bunse_StandArt_2560_200K.gif',
       'Severin_Bunse_StandArt_2560_400K.jpg',
-      'Severin_Bunse_StandArt_2560_700K.gif',
-      'Severin_Bunse_StandArt_A_2560_267K.jpg',
       'Severin_Bunse_StandArt_A_Vertical_2560.gif',
       'Severin_Bunse_StandArt_A_Vertical_2560.jpg',
-      'Severin_Bunse_StandArt_Line_2560_700K.gif',
       'Severin_Bunse_StandArt_N_2560.jpg',
       'Severin_Bunse_Tennhauser_Gate_2560_600K.gif',
       'Severin_Bunse_Thesis_2560_700K.gif',
       'Severin_Bunse_screeensaver_2560_2,8m.jpg',
     ];
 
-    const mediaImg     = document.getElementById('media-img');
-    const mediaVideo   = document.getElementById('media-video');
-    const preloadVideo = document.getElementById('preload-video');
-    const canvas       = document.getElementById('overlay');
-    const ctx          = canvas.getContext('2d');
+    const container   = document.querySelector('.container');
+    const mediaImg    = document.getElementById('media-img');
+    const mediaVideo  = document.getElementById('media-video');
+    const canvas      = document.getElementById('overlay');
+    const ctx         = canvas.getContext('2d');
 
-    const PIXEL_SIZE         = 1;
-    const REVEAL_DURATION    = 2;
-    const MAX_WIDTH          = 650; // landscape
-    const MAX_HEIGHT_PORTRAIT = 400; // portrait, ratio ≤ 1.5
-    const MAX_HEIGHT_SKINNY   = 450; // portrait, ratio > 1.5
+    const REVEAL_DURATION = 2;
+    const EASE_START      = 0.8; // fraction of the duration after which the reveal eases to a stop
+    const MAX_WIDTH       = 650;
+    const MAX_HEIGHT      = 450;
+    const BLEED           = 2; // px the overlay extends past the media's edges, to mask sub-pixel rounding gaps
 
     let currentIndex = 0;
     let revealId     = 0;
     let loadGen      = 0;
 
-    function preloadNext() {
-      const nextIndex = (currentIndex + 1) % mediaFiles.length;
-      const file = mediaFiles[nextIndex];
-      const ext  = file.split('.').pop().toLowerCase();
-      if (ext === 'mp4') {
-        preloadVideo.src = 'images/' + file;
-        preloadVideo.load();
-      } else {
-        const img = new Image();
-        img.src = 'images/' + file;
-      }
-    }
+    // Reusable scratch memory for the reveal pixel buffers, sized for the
+    // largest canvas this device can produce (the bounding box above, scaled
+    // by its pixel ratio). Reusing these avoids allocating a fresh multi-
+    // megabyte buffer on every slide transition.
+    const SCRATCH_DPR    = window.devicePixelRatio || 1;
+    const SCRATCH_PIXELS = Math.ceil((MAX_WIDTH + BLEED * 2) * SCRATCH_DPR) *
+                            Math.ceil((MAX_HEIGHT + BLEED * 2) * SCRATCH_DPR);
+    const orderScratch = new ArrayBuffer(SCRATCH_PIXELS * 4);
+    const pixelScratch = new ArrayBuffer(SCRATCH_PIXELS * 4);
 
     function resizeMedia(el) {
-      const nw = el.naturalWidth  || el.videoWidth;
-      const nh = el.naturalHeight || el.videoHeight;
-      el.style.width  = 'auto';
-      el.style.height = 'auto';
-      if (nh > nw) {
-        const maxH = (nh / nw) > 1.5 ? MAX_HEIGHT_SKINNY : MAX_HEIGHT_PORTRAIT;
-        el.style.maxWidth  = '95vw';
-        el.style.maxHeight = `min(${maxH}px, 95vh)`;
-      } else {
-        el.style.maxWidth  = `min(${MAX_WIDTH}px, 95vw)`;
-        el.style.maxHeight = '';
-      }
+      el.style.width     = 'auto';
+      el.style.height    = 'auto';
+      el.style.maxWidth  = `min(${MAX_WIDTH}px, 95vw)`;
+      el.style.maxHeight = `min(${MAX_HEIGHT}px, 95vh)`;
+    }
+
+    // Keep .container pinned to the size of whatever's currently visible
+    // while the next slide loads off-screen (hidden). Without this, the
+    // container shrink-wraps to the hidden element's fluctuating size as it
+    // loads, which reflows the centered page layout and visibly nudges the
+    // caption before the new slide is even shown.
+    function pinContainer(el) {
+      container.style.width  = el.offsetWidth  + 'px';
+      container.style.height = el.offsetHeight + 'px';
+    }
+
+    // Linear up to EASE_START, then tapers smoothly to a stop. The tail
+    // curve's rate matches the incoming linear speed exactly at the
+    // breakpoint (no jump) and eases continuously down to a standstill —
+    // so deceleration begins seamlessly rather than with a kink.
+    function easedProgress(t) {
+      if (t >= 1) return 1;
+      if (t <= EASE_START) return t;
+      const s = (t - EASE_START) / (1 - EASE_START);
+      return EASE_START + (1 - EASE_START) * (s + s * s - s * s * s);
     }
 
     function setupCanvas() {
       const el  = mediaVideo.style.display !== 'none' ? mediaVideo : mediaImg;
       const dpr = window.devicePixelRatio || 1;
-      const w   = el.offsetWidth;
-      const h   = el.offsetHeight;
+      const w   = el.offsetWidth  + BLEED * 2;
+      const h   = el.offsetHeight + BLEED * 2;
       canvas.width  = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       canvas.style.width  = w + 'px';
       canvas.style.height = h + 'px';
-    }
-
-    // Captures current GIF frame as a static JPEG so it stays frozen during the reveal
-    function freezeGif(imgEl) {
-      const dpr = window.devicePixelRatio || 1;
-      const w   = imgEl.offsetWidth;
-      const h   = imgEl.offsetHeight;
-      const c   = document.createElement('canvas');
-      c.width   = Math.round(w * dpr);
-      c.height  = Math.round(h * dpr);
-      const off = c.getContext('2d');
-      off.fillStyle = '#ffffff';
-      off.fillRect(0, 0, c.width, c.height);
-      off.drawImage(imgEl, 0, 0, c.width, c.height);
-      imgEl.src = c.toDataURL('image/jpeg', 0.92);
+      canvas.style.left   = -BLEED + 'px';
+      canvas.style.top    = -BLEED + 'px';
     }
 
     function startReveal(onComplete) {
@@ -172,35 +161,45 @@
       canvas.style.opacity    = '1';
 
       setupCanvas();
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const cols  = Math.ceil(canvas.width / PIXEL_SIZE);
-      const rows  = Math.ceil(canvas.height / PIXEL_SIZE);
-      const count = cols * rows;
-      const pixels = new Float32Array(count * 2);
+      const width  = canvas.width;
+      const height = canvas.height;
+      const count  = width * height;
 
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const i = (r * cols + c) * 2;
-          pixels[i]     = c * PIXEL_SIZE;
-          pixels[i + 1] = r * PIXEL_SIZE;
-        }
-      }
+      // Maintain the reveal as a single off-DOM pixel buffer and push it to
+      // the canvas with one putImageData() per frame, instead of thousands
+      // of individual clearRect() calls — same visual result, far less
+      // per-call browser overhead. Drawn from the shared scratch buffers
+      // when they're big enough, falling back to a fresh allocation in the
+      // rare case the device's pixel ratio grew since startup.
+      const imageData = count <= SCRATCH_PIXELS
+        ? new ImageData(new Uint8ClampedArray(pixelScratch, 0, count * 4), width, height)
+        : ctx.createImageData(width, height);
+      imageData.data.fill(255); // opaque white everywhere
+      ctx.putImageData(imageData, 0, 0);
+
+      const order = count <= SCRATCH_PIXELS
+        ? new Uint32Array(orderScratch, 0, count)
+        : new Uint32Array(count);
+      for (let i = 0; i < count; i++) order[i] = i;
       for (let i = count - 1; i > 0; i--) {
         const j = (Math.random() * (i + 1)) | 0;
-        const x = pixels[i * 2],     y = pixels[i * 2 + 1];
-        pixels[i * 2]     = pixels[j * 2];
-        pixels[i * 2 + 1] = pixels[j * 2 + 1];
-        pixels[j * 2]     = x;
-        pixels[j * 2 + 1] = y;
+        const t = order[i]; order[i] = order[j]; order[j] = t;
       }
 
-      const pixelsPerFrame = Math.ceil(count / (REVEAL_DURATION * 60));
+      const totalFrames = REVEAL_DURATION * 60;
+      const data = imageData.data;
       let index = 0;
+      let frame = 0;
 
       function animate() {
         if (myId !== revealId) return;
+        frame++;
+        const end = Math.min(count, Math.round(easedProgress(frame / totalFrames) * count));
+        for (; index < end; index++) {
+          data[order[index] * 4 + 3] = 0;
+        }
+        ctx.putImageData(imageData, 0, 0);
         if (index >= count) {
           canvas.style.transition = 'opacity 0.6s ease';
           canvas.style.opacity    = '0';
@@ -213,65 +212,75 @@
           }, { once: true });
           return;
         }
-        const end = Math.min(index + pixelsPerFrame, count);
-        for (; index < end; index++) {
-          ctx.clearRect(pixels[index * 2], pixels[index * 2 + 1], PIXEL_SIZE, PIXEL_SIZE);
-        }
         requestAnimationFrame(animate);
       }
       animate();
     }
 
-    function loadMedia(index) {
-      const myGen = ++loadGen;
-      const file  = mediaFiles[index];
-      const ext   = file.split('.').pop().toLowerCase();
+    // Skip a slide whose file failed to load (e.g. missing/mistyped filename)
+    // instead of leaving the show stuck forever on it.
+    function loadFailed(myGen, file) {
+      if (myGen !== loadGen) return;
+      console.warn('Failed to load media file:', file);
+      advance();
+    }
 
-      if (ext === 'mp4') {
-        mediaImg.style.display   = 'none';
-        mediaVideo.style.display = 'block';
-        mediaVideo.src = 'images/' + file;
-        mediaVideo.load();
-        mediaVideo.addEventListener('canplay', () => {
-          if (myGen !== loadGen) return;
-          resizeMedia(mediaVideo);
-          startReveal(() => mediaVideo.play());
-        }, { once: true });
+    function loadMedia(index) {
+      const myGen   = ++loadGen;
+      const file    = mediaFiles[index];
+      const isVideo = file.split('.').pop().toLowerCase() === 'mp4';
+      const el      = isVideo ? mediaVideo : mediaImg;
+      const controller = new AbortController();
+
+      (isVideo ? mediaImg : mediaVideo).style.display = 'none';
+      if (!isVideo) mediaVideo.pause();
+      el.style.visibility = 'hidden';
+      el.style.display    = 'block';
+      el.src = 'images/' + file;
+      if (isVideo) el.load();
+
+      const reveal = () => {
+        resizeMedia(el);
+        pinContainer(el);
+        el.style.visibility = 'visible';
+        if (isVideo) el.play().catch(() => {});
+        startReveal();
+      };
+      const onReady = () => {
+        controller.abort();
+        if (myGen !== loadGen) return;
+        // Only <img> has decode(); it lets us wait for the bitmap to be
+        // ready off the main thread before revealing, avoiding a jank-y
+        // synchronous decode on first paint. <video> has nothing to wait
+        // for beyond 'canplay', so it reveals immediately.
+        el.decode ? el.decode().then(reveal).catch(reveal) : reveal();
+      };
+
+      el.addEventListener('error', () => {
+        controller.abort();
+        loadFailed(myGen, file);
+      }, { signal: controller.signal });
+
+      if (!isVideo && el.complete) {
+        onReady();
       } else {
-        mediaVideo.pause();
-        mediaVideo.style.display    = 'none';
-        mediaImg.style.display      = 'block';
-        mediaImg.style.visibility   = 'hidden';
-        const originalSrc = 'images/' + file;
-        mediaImg.src = originalSrc;
-        const onReady = () => {
-          if (myGen !== loadGen) return;
-          resizeMedia(mediaImg);
-          if (ext === 'gif') {
-            freezeGif(mediaImg);
-            mediaImg.style.visibility = 'visible';
-            startReveal(() => { mediaImg.src = originalSrc; });
-          } else {
-            const go = () => {
-              mediaImg.style.visibility = 'visible';
-              startReveal();
-            };
-            mediaImg.decode ? mediaImg.decode().then(go).catch(go) : go();
-          }
-        };
-        mediaImg.complete ? onReady() : mediaImg.addEventListener('load', onReady, { once: true });
+        el.addEventListener(isVideo ? 'canplay' : 'load', onReady, { signal: controller.signal });
       }
+    }
+
+    function advance() {
+      currentIndex = (currentIndex + 1) % mediaFiles.length;
+      loadMedia(currentIndex);
     }
 
     // Pause/resume video when tab visibility changes
     document.addEventListener('visibilitychange', () => {
       if (mediaVideo.style.display === 'none') return;
-      document.hidden ? mediaVideo.pause() : mediaVideo.play();
+      document.hidden ? mediaVideo.pause() : mediaVideo.play().catch(() => {});
     });
 
     // Initial load
     loadMedia(0);
-    preloadNext();
 
     // Click advances to next
     document.addEventListener('click', () => {
@@ -280,9 +289,7 @@
       canvas.style.opacity    = '1';
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      currentIndex = (currentIndex + 1) % mediaFiles.length;
-      loadMedia(currentIndex);
-      preloadNext();
+      advance();
     });
   </script>
 </body>
